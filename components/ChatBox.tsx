@@ -1,18 +1,16 @@
 "use client";
 
 import { useCallback, useRef, useState, useEffect } from "react";
-import Link from "next/link";
 import { streamChat, type ChatMessage } from "@/lib/api";
 import { ChatBubbleSkeleton } from "@/components/Skeleton";
 
-export default function ChatPage() {
+export function ChatBox() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [toolStatus, setToolStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const scrollToBottom = useCallback(() => {
@@ -98,32 +96,7 @@ export default function ChatPage() {
   }, [input, messages, streaming, scrollToBottom]);
 
   return (
-    <main
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100vh",
-        maxWidth: 768,
-        margin: "0 auto",
-        background: "var(--bg)",
-      }}
-    >
-      <header
-        style={{
-          padding: "0.75rem 1rem",
-          borderBottom: "1px solid var(--border)",
-          display: "flex",
-          alignItems: "center",
-          gap: "1rem",
-          flexShrink: 0,
-        }}
-      >
-        <Link href="/" style={{ color: "var(--muted)", fontSize: "0.9rem" }}>
-          ← Home
-        </Link>
-        <h1 style={{ fontSize: "1.1rem", fontWeight: 600 }}>Trading Assistant</h1>
-      </header>
-
+    <>
       {error && (
         <div
           style={{
@@ -154,7 +127,6 @@ export default function ChatPage() {
       )}
 
       <div
-        ref={contentRef}
         style={{
           flex: 1,
           minHeight: 0,
@@ -216,7 +188,6 @@ export default function ChatPage() {
         }}
         style={{
           flexShrink: 0,
-          minHeight: 0,
           padding: "1rem",
           borderTop: "1px solid var(--border)",
           background: "var(--bg)",
@@ -274,7 +245,6 @@ export default function ChatPage() {
           )}
         </div>
       </form>
-
-    </main>
+    </>
   );
 }

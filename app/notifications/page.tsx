@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getNotifications, markNotificationRead } from "@/lib/api";
+import { CardSkeleton } from "@/components/Skeleton";
 
 type Notification = {
   id: number;
@@ -55,7 +56,11 @@ export default function NotificationsPage() {
         </div>
       )}
       {loading ? (
-        <p style={{ color: "var(--muted)" }}>Loading...</p>
+        <>
+          <CardSkeleton />
+          <CardSkeleton />
+          <CardSkeleton />
+        </>
       ) : notifications.length === 0 ? (
         <p style={{ color: "var(--muted)" }}>No notifications. Scheduled jobs will create analysis and suggested next steps here (e.g. after news fetch and portfolio analysis).</p>
       ) : (
