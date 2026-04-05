@@ -26,7 +26,7 @@ npm install
 
 ## Env vars
 
-Copy `.env.example` to `.env`. Set `NEXT_PUBLIC_API_URL` to your backend URL (e.g. `http://localhost:8000`).
+Copy `.env.example` to `.env`. Set `NEXT_PUBLIC_API_URL` to your backend URL (e.g. `http://localhost:8000`). API requests use `credentials: "include"` so the backend can attach the HttpOnly session cookie after **Sign in with Google** (configure OAuth on the backend; see [backend/README.md](../backend/README.md)).
 
 ## Scripts
 

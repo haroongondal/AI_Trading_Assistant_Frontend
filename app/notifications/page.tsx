@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { getNotifications, markNotificationRead } from "@/lib/api";
 import { CardSkeleton } from "@/components/Skeleton";
+import { MarkdownMessage } from "@/components/MarkdownMessage";
 
 type Notification = {
   id: number;
@@ -45,9 +45,8 @@ export default function NotificationsPage() {
   };
 
   return (
-    <main style={{ maxWidth: 800, margin: "0 auto", padding: "2rem" }}>
+    <main className="notifications-page" style={{ maxWidth: 800, margin: "0 auto", padding: "2rem" }}>
       <header style={{ marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: "1rem" }}>
-        <Link href="/" style={{ color: "var(--muted)", fontSize: "0.9rem" }}>← Home</Link>
         <h1 style={{ fontSize: "1.5rem" }}>Notifications</h1>
       </header>
       {error && (
@@ -67,6 +66,7 @@ export default function NotificationsPage() {
         <ul style={{ listStyle: "none" }}>
           {notifications.map((n) => (
             <li
+              className="notification-card"
               key={n.id}
               style={{
                 padding: "1rem",
@@ -80,7 +80,9 @@ export default function NotificationsPage() {
                 <div style={{ flex: 1 }}>
                   <h3 style={{ fontSize: "1rem", marginBottom: "0.25rem" }}>{n.title}</h3>
                   <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginBottom: "0.5rem" }}>{new Date(n.created_at).toLocaleString()}</p>
-                  <p style={{ whiteSpace: "pre-wrap", marginBottom: "0.5rem" }}>{n.body}</p>
+                  <div style={{ marginBottom: "0.5rem" }}>
+                    <MarkdownMessage content={n.body} />
+                  </div>
                   {n.suggested_action && (
                     <p style={{ fontSize: "0.9rem", color: "var(--accent)" }}>Suggested: {n.suggested_action}</p>
                   )}
@@ -98,6 +100,17 @@ export default function NotificationsPage() {
           ))}
         </ul>
       )}
+      <style jsx>{`
+        @media (max-width: 640px) {
+          .notifications-page {
+            padding: 1rem !important;
+          }
+          .notification-card {
+            padding: 0.75rem !important;
+            margin-bottom: 0.55rem !important;
+          }
+        }
+      `}</style>
     </main>
   );
 }

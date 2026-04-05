@@ -1,9 +1,28 @@
 "use client";
 
 import { useCallback, useRef, useState, useEffect } from "react";
-import Link from "next/link";
 import { streamChat, type ChatMessage } from "@/lib/api";
-import { ChatBubbleSkeleton } from "@/components/Skeleton";
+import { MarkdownMessage } from "@/components/MarkdownMessage";
+
+function formatAgentStatus(s: string): string {
+  const t = s.trim();
+  if (t.startsWith("*") && t.endsWith("*") && t.length > 2) {
+    return t.slice(1, -1);
+  }
+  return s;
+}
+
+function isGenericAgentStatus(s: string): boolean {
+  const t = s.trim().toLowerCase();
+  return (
+    t === "thinking…" ||
+    t === "still thinking…" ||
+    t === "planning next step…" ||
+    t === "working on your answer…" ||
+    t === "composing answer…" ||
+    t === "selecting tools…"
+  );
+}
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -14,6 +33,7 @@ export default function ChatPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const specificStatusSinceRef = useRef<number | null>(null);
 
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -21,7 +41,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (streaming || messages.length) scrollToBottom();
-  }, [streaming, messages.length, scrollToBottom]);
+  }, [streaming, messages, toolStatus, scrollToBottom]);
 
   const stopStreaming = useCallback(() => {
     if (abortRef.current) {
@@ -37,6 +57,7 @@ export default function ChatPage() {
     setInput("");
     setError(null);
     setToolStatus(null);
+    specificStatusSinceRef.current = null;
     abortRef.current = new AbortController();
     const userMessage: ChatMessage = { role: "user", content: text };
     setMessages((prev) => [...prev, userMessage]);
@@ -49,7 +70,6 @@ export default function ChatPage() {
         text,
         messages,
         (token) => {
-          setToolStatus(null);
           assistantContent += token;
           setMessages((prev) => {
             const next = [...prev];
@@ -63,6 +83,7 @@ export default function ChatPage() {
         () => {
           abortRef.current = null;
           setToolStatus(null);
+          specificStatusSinceRef.current = null;
           setStreaming(false);
           scrollToBottom();
         },
@@ -70,10 +91,14 @@ export default function ChatPage() {
           abortRef.current = null;
           if (err.message?.includes("abort") || err.name === "AbortError") {
             setStreaming(false);
+            setToolStatus(null);
+            specificStatusSinceRef.current = null;
             return;
           }
           setError(err.message);
           setStreaming(false);
+          setToolStatus(null);
+          specificStatusSinceRef.current = null;
           setMessages((prev) => {
             const next = [...prev];
             const last = next[next.length - 1];
@@ -84,16 +109,37 @@ export default function ChatPage() {
           });
         },
         abortRef.current.signal,
-        (status) => setToolStatus(status)
+        (status) => {
+          const next = formatAgentStatus(status);
+          setToolStatus((prev) => {
+            const now = Date.now();
+            const nextGeneric = isGenericAgentStatus(next);
+            if (!nextGeneric) {
+              specificStatusSinceRef.current = now;
+              return next;
+            }
+            const prevSpecific = !!prev && !isGenericAgentStatus(prev);
+            if (prevSpecific) {
+              const since = specificStatusSinceRef.current ?? now;
+              if (now - since < 3000) return prev;
+              specificStatusSinceRef.current = null;
+            }
+            return next;
+          });
+        }
       );
     } catch (e) {
       abortRef.current = null;
       if (e instanceof Error && e.name === "AbortError") {
         setStreaming(false);
+        setToolStatus(null);
+        specificStatusSinceRef.current = null;
         return;
       }
       setError(e instanceof Error ? e.message : "Unknown error");
       setStreaming(false);
+      setToolStatus(null);
+      specificStatusSinceRef.current = null;
     }
   }, [input, messages, streaming, scrollToBottom]);
 
@@ -110,17 +156,16 @@ export default function ChatPage() {
     >
       <header
         style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 25,
           padding: "0.75rem 1rem",
           borderBottom: "1px solid var(--border)",
           display: "flex",
           alignItems: "center",
-          gap: "1rem",
           flexShrink: 0,
         }}
       >
-        <Link href="/" style={{ color: "var(--muted)", fontSize: "0.9rem" }}>
-          ← Home
-        </Link>
         <h1 style={{ fontSize: "1.1rem", fontWeight: 600 }}>Trading Assistant</h1>
       </header>
 
@@ -135,21 +180,6 @@ export default function ChatPage() {
           }}
         >
           {error}
-        </div>
-      )}
-
-      {toolStatus && (
-        <div
-          style={{
-            flexShrink: 0,
-            padding: "0.5rem 1rem",
-            color: "var(--muted)",
-            fontSize: "0.875rem",
-            fontStyle: "italic",
-            borderBottom: "1px solid var(--border)",
-          }}
-        >
-          {toolStatus}
         </div>
       )}
 
@@ -171,41 +201,58 @@ export default function ChatPage() {
             <p style={{ fontSize: "0.85rem" }}>You can also say &quot;add 2 ETH&quot; or &quot;my goal is long-term growth&quot; to update your portfolio.</p>
           </div>
         )}
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            style={{
-              display: "flex",
-              justifyContent: m.role === "user" ? "flex-end" : "flex-start",
-              width: "100%",
-            }}
-          >
+        {messages.map((m, i) => {
+          const isLast = i === messages.length - 1;
+          const streamingHere = m.role === "assistant" && streaming && isLast;
+          return (
             <div
+              key={i}
               style={{
-                maxWidth: "85%",
-                padding: "0.875rem 1rem",
-                borderRadius: 12,
-                background: m.role === "user" ? "var(--accent)" : "var(--surface)",
-                border: m.role === "assistant" ? "1px solid var(--border)" : "none",
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-                fontSize: "0.9375rem",
-                lineHeight: 1.5,
+                display: "flex",
+                justifyContent: m.role === "user" ? "flex-end" : "flex-start",
+                width: "100%",
               }}
             >
-              {m.content || (m.role === "assistant" && streaming && i === messages.length - 1 ? (
-                <span style={{ animation: "cursor-pulse 1s ease-in-out infinite" }}>▌</span>
-              ) : null)}
+              <div
+                style={{
+                  maxWidth: "85%",
+                  padding: "0.875rem 1rem",
+                  borderRadius: 12,
+                  background: m.role === "user" ? "var(--accent)" : "var(--surface)",
+                  border: m.role === "assistant" ? "1px solid var(--border)" : "none",
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  fontSize: "0.9375rem",
+                  lineHeight: 1.5,
+                }}
+              >
+                {!streamingHere ? (
+                  m.content ? <MarkdownMessage content={m.content} /> : null
+                ) : (
+                  <>
+                    {m.content ? <MarkdownMessage content={m.content} /> : null}
+                    <span style={{ animation: "cursor-pulse 1s ease-in-out infinite" }}>▌</span>
+                    {toolStatus ? (
+                      <div
+                        style={{
+                          marginTop: m.content ? "0.45rem" : "0.25rem",
+                          paddingTop: m.content ? "0.45rem" : 0,
+                          borderTop: m.content ? "1px solid var(--border)" : undefined,
+                          fontSize: "0.8125rem",
+                          color: "var(--muted)",
+                          fontStyle: "italic",
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {toolStatus}
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
-        {streaming && messages[messages.length - 1]?.role === "assistant" && !messages[messages.length - 1]?.content && (
-          <div style={{ display: "flex", justifyContent: "flex-start", width: "100%" }}>
-            <div style={{ maxWidth: "85%", padding: "0.875rem 1rem" }}>
-              <ChatBubbleSkeleton />
-            </div>
-          </div>
-        )}
+          );
+        })}
         <div ref={bottomRef} />
       </div>
 
@@ -216,7 +263,9 @@ export default function ChatPage() {
         }}
         style={{
           flexShrink: 0,
-          minHeight: 0,
+          position: "sticky",
+          bottom: 0,
+          zIndex: 20,
           padding: "1rem",
           borderTop: "1px solid var(--border)",
           background: "var(--bg)",
@@ -274,7 +323,6 @@ export default function ChatPage() {
           )}
         </div>
       </form>
-
     </main>
   );
 }

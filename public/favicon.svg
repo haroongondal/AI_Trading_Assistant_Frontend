@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="AI Trading Assistant">
+  <defs>
+    <linearGradient id="g" x1="6" y1="26" x2="26" y2="6" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#60a5fa"/>
+    </linearGradient>
+  </defs>
+  <!-- Tile matches app surface -->
+  <rect width="32" height="32" rx="7" fill="#18181c"/>
+  <rect x="1" y="1" width="30" height="30" rx="6" fill="none" stroke="#2a2a30" stroke-width="1"/>
+  <!-- Uptrend -->
+  <path d="M7 22 L12 17 L16 19 L25 10" fill="none" stroke="url(#g)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Neural / AI node on trend -->
+  <circle cx="25" cy="10" r="2.25" fill="#e4e4e7" stroke="#3b82f6" stroke-width="1"/>
+  <!-- Candlesticks (readable at 16px) -->
+  <rect x="8" y="18" width="3" height="6" rx="0.5" fill="#3b82f6" opacity="0.85"/>
+  <path d="M9.5 16.5v9" stroke="#71717a" stroke-width="1" stroke-linecap="round"/>
+  <rect x="14.5" y="14" width="3" height="10" rx="0.5" fill="#60a5fa"/>
+  <path d="M16 11.5v15" stroke="#71717a" stroke-width="1" stroke-linecap="round"/>
+  <rect x="21" y="16" width="3" height="8" rx="0.5" fill="#3b82f6" opacity="0.65"/>
+  <path d="M22.5 14.5v11" stroke="#71717a" stroke-width="1" stroke-linecap="round"/>
+</svg>

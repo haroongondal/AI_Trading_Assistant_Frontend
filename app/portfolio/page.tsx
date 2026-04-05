@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import Link from "next/link";
 import { getPortfolio, addPosition, deletePosition, updatePortfolioGoal, getCoins, type Coin } from "@/lib/api";
 import { Skeleton, TableRowSkeleton } from "@/components/Skeleton";
 
@@ -119,9 +118,6 @@ export default function PortfolioPage() {
   return (
     <main style={{ maxWidth: 800, margin: "0 auto", padding: "2rem" }}>
       <header style={{ marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: "1rem" }}>
-        <Link href="/" style={{ color: "var(--muted)", fontSize: "0.9rem" }}>
-          ← Home
-        </Link>
         <h1 style={{ fontSize: "1.5rem" }}>Portfolio</h1>
       </header>
       {error && (

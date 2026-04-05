@@ -1,11 +1,32 @@
 /**
  * Centralized API client for the FastAPI backend.
  * Uses NEXT_PUBLIC_API_URL so the browser can call the backend (e.g. http://localhost:8000).
+ * credentials: "include" sends the HttpOnly session cookie set by Google OAuth callback.
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+const cred: RequestCredentials = "include";
+
 export type ChatMessage = { role: "user" | "assistant"; content: string };
+
+export type CurrentUser = { id: string; name: string; email: string | null };
+
+export function getGoogleLoginUrl(): string {
+  return `${API_URL}/api/auth/google/login`;
+}
+
+export async function getMe(): Promise<CurrentUser | null> {
+  const res = await fetch(`${API_URL}/api/auth/me`, { credentials: cred });
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (data == null || typeof data !== "object") return null;
+  return data as CurrentUser;
+}
+
+export async function logoutApi(): Promise<void> {
+  await fetch(`${API_URL}/api/auth/logout`, { method: "POST", credentials: cred });
+}
 
 export async function streamChat(
   message: string,
@@ -23,6 +44,7 @@ export async function streamChat(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message, history }),
       signal,
+      credentials: cred,
     });
   } catch (e) {
     if (e instanceof Error && e.name === "AbortError") return;
@@ -41,44 +63,51 @@ export async function streamChat(
   }
   const decoder = new TextDecoder();
   let buffer = "";
-  let currentEvent = "message";
   const dispatch = (data: string, eventType: string) => {
-    if (data === "[DONE]" || !data.trim()) return;
+    if (data === "[DONE]") return;
     try {
       const parsed = JSON.parse(data) as { data?: string };
       if (parsed?.data != null) data = String(parsed.data);
     } catch {
       /* use raw data */
     }
-    if (eventType === "status") onStatus?.(data);
-    else onToken(data);
+    if (eventType === "status") {
+      if (data) onStatus?.(data);
+      return;
+    }
+    onToken(data);
+  };
+
+  const processEvent = (rawEvent: string) => {
+    if (!rawEvent) return;
+    let eventType = "message";
+    const dataLines: string[] = [];
+    for (const line of rawEvent.split("\n")) {
+      if (line.startsWith("event:")) {
+        eventType = line.slice(6).trim() || "message";
+      } else if (line.startsWith("data:")) {
+        const data = line.startsWith("data: ") ? line.slice(6) : line.slice(5);
+        dataLines.push(data);
+      }
+    }
+    if (!dataLines.length) return;
+    dispatch(dataLines.join("\n"), eventType);
   };
   try {
     while (true) {
       if (signal?.aborted) break;
       const { done, value } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        if (line.startsWith("event: ")) {
-          currentEvent = line.slice(7).trim();
-          continue;
-        }
-        if (line.startsWith("data: ")) {
-          const data = line.slice(6);
-          dispatch(data, currentEvent);
-          currentEvent = "message";
-        }
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary !== -1) {
+        const rawEvent = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        processEvent(rawEvent);
+        boundary = buffer.indexOf("\n\n");
       }
     }
-    if (buffer.startsWith("data: ")) {
-      const data = buffer.slice(6).trim();
-      dispatch(data, currentEvent);
-    } else if (buffer.startsWith("event: ")) {
-      currentEvent = buffer.slice(7).trim();
-    }
+    processEvent(buffer.trimEnd());
   } catch (e) {
     if (e instanceof Error && e.name === "AbortError") return;
     onError?.(e instanceof Error ? e : new Error(String(e)));
@@ -101,7 +130,7 @@ export async function getPortfolio(): Promise<{
   total_positions: number;
   goal: string | null;
 }> {
-  const res = await fetch(`${API_URL}/api/portfolio`);
+  const res = await fetch(`${API_URL}/api/portfolio`, { credentials: cred });
   if (!res.ok) throw new Error(`Portfolio failed: ${res.status}`);
   return res.json();
 }
@@ -111,6 +140,7 @@ export async function updatePortfolioGoal(goal: string | null): Promise<{ goal: 
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ goal }),
+    credentials: cred,
   });
   if (!res.ok) throw new Error(`Update goal failed: ${res.status}`);
   return res.json();
@@ -126,6 +156,7 @@ export async function addPosition(data: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
+    credentials: cred,
   });
   if (!res.ok) throw new Error(`Add position failed: ${res.status}`);
   return res.json();
@@ -137,13 +168,13 @@ export async function getCoins(search?: string): Promise<{ coins: Coin[] }> {
   const url = search?.trim()
     ? `${API_URL}/api/coins?search=${encodeURIComponent(search.trim())}`
     : `${API_URL}/api/coins`;
-  const res = await fetch(url);
+  const res = await fetch(url, { credentials: cred });
   if (!res.ok) throw new Error(`Coins failed: ${res.status}`);
   return res.json();
 }
 
 export async function deletePosition(id: number): Promise<void> {
-  const res = await fetch(`${API_URL}/api/portfolio/${id}`, { method: "DELETE" });
+  const res = await fetch(`${API_URL}/api/portfolio/${id}`, { method: "DELETE", credentials: cred });
   if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
 }
 
@@ -157,7 +188,7 @@ export async function getNotifications(): Promise<
     created_at: string;
   }>
 > {
-  const res = await fetch(`${API_URL}/api/notifications`);
+  const res = await fetch(`${API_URL}/api/notifications`, { credentials: cred });
   if (!res.ok) throw new Error(`Notifications failed: ${res.status}`);
   return res.json();
 }
@@ -167,6 +198,7 @@ export async function markNotificationRead(id: number): Promise<void> {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ read: true }),
+    credentials: cred,
   });
   if (!res.ok) throw new Error(`Mark read failed: ${res.status}`);
 }
