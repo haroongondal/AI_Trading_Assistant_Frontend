@@ -178,6 +178,27 @@ export async function deletePosition(id: number): Promise<void> {
   if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
 }
 
+export async function editPosition(
+  id: number,
+  data: { quantity?: number; entry_price?: number; notes?: string | null }
+): Promise<{
+  id: number;
+  symbol: string;
+  quantity: number;
+  entry_price: number;
+  notes: string | null;
+  created_at: string;
+}> {
+  const res = await fetch(`${API_URL}/api/portfolio/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+    credentials: cred,
+  });
+  if (!res.ok) throw new Error(`Edit failed: ${res.status}`);
+  return res.json();
+}
+
 export async function getNotifications(): Promise<
   Array<{
     id: number;

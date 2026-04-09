@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { getPortfolio, addPosition, deletePosition, updatePortfolioGoal, getCoins, type Coin } from "@/lib/api";
+import { getPortfolio, addPosition, deletePosition, updatePortfolioGoal, getCoins, editPosition, type Coin } from "@/lib/api";
 import { Skeleton, TableRowSkeleton } from "@/components/Skeleton";
 
 type Position = {
@@ -23,9 +23,15 @@ export default function PortfolioPage() {
   const [coinDropdownOpen, setCoinDropdownOpen] = useState(false);
   const [selectedCoin, setSelectedCoin] = useState<Coin | null>(null);
   const [quantity, setQuantity] = useState("");
+  const [entryPrice, setEntryPrice] = useState("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [goalSaving, setGoalSaving] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editQuantity, setEditQuantity] = useState("");
+  const [editEntryPrice, setEditEntryPrice] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -71,13 +77,21 @@ export default function PortfolioPage() {
     e.preventDefault();
     const sym = selectedCoin?.symbol ?? coinSearch.trim().toUpperCase();
     const q = parseFloat(quantity);
+    const ep = entryPrice.trim() ? parseFloat(entryPrice) : null;
     if (!sym || isNaN(q) || q <= 0) return;
+    if (ep != null && (isNaN(ep) || ep <= 0)) return;
     setSubmitting(true);
     try {
-      await addPosition({ symbol: sym, quantity: q, notes: notes.trim() || null });
+      await addPosition({
+        symbol: sym,
+        quantity: q,
+        entry_price: ep,
+        notes: notes.trim() || null,
+      });
       setSelectedCoin(null);
       setCoinSearch("");
       setQuantity("");
+      setEntryPrice("");
       setNotes("");
       setCoinDropdownOpen(false);
       await load();
@@ -105,6 +119,43 @@ export default function PortfolioPage() {
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to delete");
+    }
+  };
+
+  const startEdit = (p: Position) => {
+    setEditingId(p.id);
+    setEditQuantity(String(p.quantity));
+    setEditEntryPrice(String(p.entry_price));
+    setEditNotes(p.notes ?? "");
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditQuantity("");
+    setEditEntryPrice("");
+    setEditNotes("");
+  };
+
+  const saveEdit = async (id: number) => {
+    const q = parseFloat(editQuantity);
+    const ep = parseFloat(editEntryPrice);
+    if (isNaN(q) || q <= 0 || isNaN(ep) || ep <= 0) {
+      setError("Quantity and entry price must be positive");
+      return;
+    }
+    setEditSaving(true);
+    try {
+      await editPosition(id, {
+        quantity: q,
+        entry_price: ep,
+        notes: editNotes.trim() || null,
+      });
+      cancelEdit();
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to edit");
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -165,7 +216,7 @@ export default function PortfolioPage() {
         <form onSubmit={handleAdd} style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "flex-end" }}>
           <div ref={dropdownRef} style={{ position: "relative" }}>
             <input
-              placeholder="Search coin (e.g. BTC, ETH)"
+              placeholder="Search symbol (e.g. BTC, AAPL, OGDC)"
               value={coinSearch}
               onChange={(e) => {
                 setCoinSearch(e.target.value);
@@ -237,6 +288,23 @@ export default function PortfolioPage() {
             }}
           />
           <input
+            type="number"
+            step="any"
+            min="0"
+            placeholder="Entry price"
+            value={entryPrice}
+            onChange={(e) => setEntryPrice(e.target.value)}
+            style={{
+              padding: "0.5rem 0.75rem",
+              borderRadius: 8,
+              border: "1px solid var(--border)",
+              background: "var(--surface)",
+              color: "var(--text)",
+              width: 130,
+              fontSize: "0.9375rem",
+            }}
+          />
+          <input
             placeholder="Notes (optional)"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
@@ -280,7 +348,7 @@ export default function PortfolioPage() {
                   <th style={{ textAlign: "right", padding: "0.5rem" }}>Quantity</th>
                   <th style={{ textAlign: "right", padding: "0.5rem" }}>Entry price</th>
                   <th style={{ textAlign: "left", padding: "0.5rem" }}>Notes</th>
-                  <th style={{ width: 80 }} />
+                  <th style={{ width: 180 }} />
                 </tr>
               </thead>
               <tbody>
@@ -303,31 +371,142 @@ export default function PortfolioPage() {
                   <th style={{ textAlign: "right", padding: "0.5rem" }}>Quantity</th>
                   <th style={{ textAlign: "right", padding: "0.5rem" }}>Entry price</th>
                   <th style={{ textAlign: "left", padding: "0.5rem" }}>Notes</th>
-                  <th style={{ width: 80 }} />
+                  <th style={{ width: 180 }} />
                 </tr>
               </thead>
               <tbody>
                 {positions.map((p) => (
                   <tr key={p.id} style={{ borderBottom: "1px solid var(--border)" }}>
                     <td style={{ padding: "0.5rem" }}>{p.symbol}</td>
-                    <td style={{ textAlign: "right", padding: "0.5rem" }}>{p.quantity}</td>
-                    <td style={{ textAlign: "right", padding: "0.5rem" }}>{p.entry_price}</td>
-                    <td style={{ padding: "0.5rem", color: "var(--muted)" }}>{p.notes || "—"}</td>
+                    <td style={{ textAlign: "right", padding: "0.5rem" }}>
+                      {editingId === p.id ? (
+                        <input
+                          type="number"
+                          step="any"
+                          min="0"
+                          value={editQuantity}
+                          onChange={(e) => setEditQuantity(e.target.value)}
+                          style={{
+                            width: 90,
+                            padding: "0.3rem 0.4rem",
+                            borderRadius: 6,
+                            border: "1px solid var(--border)",
+                            background: "var(--surface)",
+                            color: "var(--text)",
+                            textAlign: "right",
+                          }}
+                        />
+                      ) : (
+                        p.quantity
+                      )}
+                    </td>
+                    <td style={{ textAlign: "right", padding: "0.5rem" }}>
+                      {editingId === p.id ? (
+                        <input
+                          type="number"
+                          step="any"
+                          min="0"
+                          value={editEntryPrice}
+                          onChange={(e) => setEditEntryPrice(e.target.value)}
+                          style={{
+                            width: 110,
+                            padding: "0.3rem 0.4rem",
+                            borderRadius: 6,
+                            border: "1px solid var(--border)",
+                            background: "var(--surface)",
+                            color: "var(--text)",
+                            textAlign: "right",
+                          }}
+                        />
+                      ) : (
+                        p.entry_price
+                      )}
+                    </td>
+                    <td style={{ padding: "0.5rem", color: "var(--muted)" }}>
+                      {editingId === p.id ? (
+                        <input
+                          value={editNotes}
+                          onChange={(e) => setEditNotes(e.target.value)}
+                          style={{
+                            width: "100%",
+                            minWidth: 140,
+                            padding: "0.3rem 0.4rem",
+                            borderRadius: 6,
+                            border: "1px solid var(--border)",
+                            background: "var(--surface)",
+                            color: "var(--text)",
+                          }}
+                        />
+                      ) : (
+                        p.notes || "—"
+                      )}
+                    </td>
                     <td style={{ padding: "0.5rem" }}>
-                      <button
-                        onClick={() => handleDelete(p.id)}
-                        style={{
-                          padding: "0.25rem 0.5rem",
-                          background: "transparent",
-                          color: "#f87171",
-                          border: "1px solid #f87171",
-                          borderRadius: 4,
-                          cursor: "pointer",
-                          fontSize: "0.85rem",
-                        }}
-                      >
-                        Delete
-                      </button>
+                      {editingId === p.id ? (
+                        <div style={{ display: "flex", gap: "0.35rem", justifyContent: "flex-end" }}>
+                          <button
+                            onClick={() => saveEdit(p.id)}
+                            disabled={editSaving}
+                            style={{
+                              padding: "0.25rem 0.5rem",
+                              background: "var(--accent)",
+                              color: "white",
+                              border: "none",
+                              borderRadius: 4,
+                              cursor: editSaving ? "not-allowed" : "pointer",
+                              fontSize: "0.85rem",
+                            }}
+                          >
+                            {editSaving ? "Saving..." : "Save"}
+                          </button>
+                          <button
+                            onClick={cancelEdit}
+                            disabled={editSaving}
+                            style={{
+                              padding: "0.25rem 0.5rem",
+                              background: "transparent",
+                              color: "var(--muted)",
+                              border: "1px solid var(--border)",
+                              borderRadius: 4,
+                              cursor: "pointer",
+                              fontSize: "0.85rem",
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", gap: "0.35rem", justifyContent: "flex-end" }}>
+                          <button
+                            onClick={() => startEdit(p)}
+                            style={{
+                              padding: "0.25rem 0.5rem",
+                              background: "transparent",
+                              color: "#93c5fd",
+                              border: "1px solid #93c5fd",
+                              borderRadius: 4,
+                              cursor: "pointer",
+                              fontSize: "0.85rem",
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDelete(p.id)}
+                            style={{
+                              padding: "0.25rem 0.5rem",
+                              background: "transparent",
+                              color: "#f87171",
+                              border: "1px solid #f87171",
+                              borderRadius: 4,
+                              cursor: "pointer",
+                              fontSize: "0.85rem",
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
