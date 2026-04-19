@@ -84,7 +84,7 @@ export default function NotificationsPage() {
                     <MarkdownMessage content={n.body} />
                   </div>
                   {n.suggested_action && (
-                    <p style={{ fontSize: "0.9rem", color: "var(--accent)" }}>Suggested: {n.suggested_action}</p>
+                    <p className="notification-suggested">Suggested: {n.suggested_action}</p>
                   )}
                 </div>
                 {!n.read && (

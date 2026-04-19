@@ -613,3 +613,38 @@ a:hover {
     font-size: 1.45rem;
   }
 }
+
+.notification-suggested {
+  margin: 0.35rem 0 0;
+  font-size: 0.9rem;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, var(--surface));
+  border: 1px solid color-mix(in oklab, var(--accent) 45%, var(--border));
+  border-radius: 999px;
+  padding: 0.5rem 0.85rem;
+  line-height: 1.45;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Tighter radii on small viewports so bordered blocks (tables, callouts) stay visually contained. */
+@media (max-width: 640px) {
+  .md table {
+    border-radius: 6px;
+  }
+
+  .md blockquote {
+    border-radius: 0 6px 6px 0;
+  }
+
+  .md pre {
+    border-radius: 8px;
+  }
+
+  .notification-suggested {
+    border-radius: 8px;
+    padding: 0.45rem 0.65rem;
+  }
+}
