@@ -28,6 +28,15 @@ npm install
 
 Copy `.env.example` to `.env`. Set `NEXT_PUBLIC_API_URL` to your backend URL (e.g. `http://localhost:8000`). API requests use `credentials: "include"` so the backend can attach the HttpOnly session cookie after **Sign in with Google** (configure OAuth on the backend; see [backend/README.md](../backend/README.md)).
 
+## Chat model selection
+
+- The chat header has a **Model** dropdown.
+- Local hosted `Llama 3.1` is available by default and tagged `very slow`.
+- Third-party providers (Google/Groq/Hugging Face/OpenRouter/GitHub/Cerebras)
+  appear when exposed by backend `GET /api/chat/models`.
+- Disabled options indicate missing backend key/dependency configuration.
+- `limited tools` in label means chat still works but may skip tool-calling flows.
+
 ## Scripts
 
 - `npm run dev` – development

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState, useEffect } from "react";
-import { streamChat, type ChatMessage } from "@/lib/api";
+import { getChatModels, streamChat, type ChatMessage, type ChatModelOption } from "@/lib/api";
 import { MarkdownMessage } from "@/components/MarkdownMessage";
 
 /** Normalize status lines from the API (legacy markdown italics used *...*). */
@@ -26,14 +26,41 @@ function isGenericAgentStatus(s: string): boolean {
 }
 
 export function ChatBox() {
+  const genericChatError = "Something went wrong. Please try again.";
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
+  const [models, setModels] = useState<ChatModelOption[]>([]);
+  const [selectedModel, setSelectedModel] = useState("local-llama31");
   const [streaming, setStreaming] = useState(false);
   const [toolStatus, setToolStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [rateLimitToast, setRateLimitToast] = useState<string | null>(null);
+  const [animatingDown, setAnimatingDown] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const specificStatusSinceRef = useRef<number | null>(null);
+  const rateLimitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const animTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isInitial = messages.length === 0 && !streaming;
+
+  const showRateLimitToast = useCallback((message: string) => {
+    setRateLimitToast(message);
+    if (rateLimitTimerRef.current) {
+      clearTimeout(rateLimitTimerRef.current);
+    }
+    rateLimitTimerRef.current = setTimeout(() => {
+      setRateLimitToast(null);
+      rateLimitTimerRef.current = null;
+    }, 8000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (rateLimitTimerRef.current) clearTimeout(rateLimitTimerRef.current);
+      if (animTimerRef.current) clearTimeout(animTimerRef.current);
+    };
+  }, []);
 
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -42,6 +69,38 @@ export function ChatBox() {
   useEffect(() => {
     if (streaming || messages.length) scrollToBottom();
   }, [streaming, messages, toolStatus, scrollToBottom]);
+
+  useEffect(() => {
+    let active = true;
+    getChatModels()
+      .then((data) => {
+        if (!active) return;
+        setModels(data.models || []);
+        const nonLocal = (data.models || []).find((m) => m.enabled && m.id !== "local-llama31");
+        const local = (data.models || []).find((m) => m.enabled && m.id === "local-llama31");
+        setSelectedModel(nonLocal?.id || local?.id || "local-llama31");
+      })
+      .catch(() => {
+        if (!active) return;
+        setModels([]);
+        setSelectedModel("local-llama31");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const autoresizeTextarea = useCallback(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    const max = 200;
+    ta.style.height = Math.min(ta.scrollHeight, max) + "px";
+  }, []);
+
+  useEffect(() => {
+    autoresizeTextarea();
+  }, [input, autoresizeTextarea]);
 
   const stopStreaming = useCallback(() => {
     if (abortRef.current) {
@@ -54,6 +113,15 @@ export function ChatBox() {
   const send = useCallback(async () => {
     const text = input.trim();
     if (!text || streaming) return;
+    // Trigger the one-time "slide down to bottom" animation on the first send.
+    if (isInitial) {
+      setAnimatingDown(true);
+      if (animTimerRef.current) clearTimeout(animTimerRef.current);
+      animTimerRef.current = setTimeout(() => {
+        setAnimatingDown(false);
+        animTimerRef.current = null;
+      }, 550);
+    }
     setInput("");
     setError(null);
     setToolStatus(null);
@@ -69,6 +137,7 @@ export function ChatBox() {
       await streamChat(
         text,
         messages,
+        selectedModel,
         (token) => {
           assistantContent += token;
           setMessages((prev) => {
@@ -95,7 +164,7 @@ export function ChatBox() {
             specificStatusSinceRef.current = null;
             return;
           }
-          setError(err.message);
+          setError(genericChatError);
           setStreaming(false);
           setToolStatus(null);
           specificStatusSinceRef.current = null;
@@ -103,7 +172,7 @@ export function ChatBox() {
             const next = [...prev];
             const last = next[next.length - 1];
             if (last.role === "assistant" && !last.content) {
-              next[next.length - 1] = { ...last, content: `[Error: ${err.message}]` };
+              next[next.length - 1] = { ...last, content: genericChatError };
             }
             return next;
           });
@@ -126,6 +195,31 @@ export function ChatBox() {
             }
             return next;
           });
+        },
+        (rateMsg) => {
+          showRateLimitToast(rateMsg);
+          setStreaming(false);
+          setToolStatus(null);
+          specificStatusSinceRef.current = null;
+          setMessages((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            if (last && last.role === "assistant" && !last.content) {
+              return next.slice(0, -1);
+            }
+            return next;
+          });
+        },
+        (fullText) => {
+          assistantContent = fullText;
+          setMessages((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            if (last && last.role === "assistant") {
+              next[next.length - 1] = { ...last, content: fullText };
+            }
+            return next;
+          });
         }
       );
     } catch (e) {
@@ -136,168 +230,146 @@ export function ChatBox() {
         specificStatusSinceRef.current = null;
         return;
       }
-      setError(e instanceof Error ? e.message : "Unknown error");
+      setError(genericChatError);
       setStreaming(false);
       setToolStatus(null);
       specificStatusSinceRef.current = null;
     }
-  }, [input, messages, streaming, scrollToBottom]);
+  }, [input, isInitial, messages, selectedModel, streaming, scrollToBottom, showRateLimitToast]);
+
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+        e.preventDefault();
+        send();
+      }
+    },
+    [send]
+  );
+
+  const composerClass = isInitial
+    ? "chat-composer chat-composer-centered"
+    : animatingDown
+    ? "chat-composer chat-composer-animating"
+    : "chat-composer chat-composer-bottom";
 
   return (
-    <>
-      {error && (
+    <main className="chat-shell">
+      {error && <div className="chat-error">{error}</div>}
+
+      {rateLimitToast && (
         <div
-          style={{
-            padding: "0.5rem 1rem",
-            background: "rgba(239,68,68,0.15)",
-            color: "#fca5a5",
-            fontSize: "0.875rem",
-            flexShrink: 0,
-          }}
+          role="alert"
+          aria-live="polite"
+          className="chat-toast chat-toast-warning"
         >
-          {error}
+          <span className="chat-toast-icon" aria-hidden="true">!</span>
+          <span className="chat-toast-text">{rateLimitToast}</span>
+          <button
+            type="button"
+            className="chat-toast-close"
+            aria-label="Dismiss"
+            onClick={() => {
+              if (rateLimitTimerRef.current) {
+                clearTimeout(rateLimitTimerRef.current);
+                rateLimitTimerRef.current = null;
+              }
+              setRateLimitToast(null);
+            }}
+          >
+            x
+          </button>
         </div>
       )}
 
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflow: "auto",
-          padding: "1rem",
-          display: "flex",
-          flexDirection: "column",
-          gap: "1.25rem",
-        }}
-      >
-        {messages.length === 0 && !streaming && (
-          <div style={{ marginTop: "2rem", textAlign: "center", color: "var(--muted)", fontSize: "0.95rem" }}>
-            <p style={{ marginBottom: "0.5rem" }}>Ask about your portfolio, latest news, or request analysis.</p>
-            <p style={{ fontSize: "0.85rem" }}>You can also say &quot;add 2 ETH&quot; or &quot;my goal is long-term growth&quot; to update your portfolio.</p>
+      <div className={`chat-body ${isInitial ? "chat-body-initial" : ""}`}>
+        {!isInitial && (
+          <div className="chat-messages">
+            {messages.map((m, i) => {
+              const isLast = i === messages.length - 1;
+              const streamingHere = m.role === "assistant" && streaming && isLast;
+              return (
+                <div key={i} className={`chat-row ${m.role === "user" ? "chat-row-user" : "chat-row-assistant"}`}>
+                  <div className={`chat-bubble ${m.role === "user" ? "chat-bubble-user" : "chat-bubble-assistant"}`}>
+                    {!streamingHere ? (
+                      m.content ? <MarkdownMessage content={m.content} /> : null
+                    ) : (
+                      <>
+                        {m.content ? <MarkdownMessage content={m.content} /> : null}
+                        <span style={{ animation: "cursor-pulse 1s ease-in-out infinite" }}>▌</span>
+                        {toolStatus ? <div className="chat-tool-status">{toolStatus}</div> : null}
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={bottomRef} />
           </div>
         )}
-        {messages.map((m, i) => {
-          const isLast = i === messages.length - 1;
-          const streamingHere = m.role === "assistant" && streaming && isLast;
-          return (
-            <div
-              key={i}
-              style={{
-                display: "flex",
-                justifyContent: m.role === "user" ? "flex-end" : "flex-start",
-                width: "100%",
-              }}
-            >
-              <div
-                style={{
-                  maxWidth: "85%",
-                  padding: "0.875rem 1rem",
-                  borderRadius: 12,
-                  background: m.role === "user" ? "var(--accent)" : "var(--surface)",
-                  border: m.role === "assistant" ? "1px solid var(--border)" : "none",
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  fontSize: "0.9375rem",
-                  lineHeight: 1.5,
-                }}
-              >
-                {!streamingHere ? (
-                  m.content ? <MarkdownMessage content={m.content} /> : null
-                ) : (
-                  <>
-                    {m.content ? <MarkdownMessage content={m.content} /> : null}
-                    <span style={{ animation: "cursor-pulse 1s ease-in-out infinite" }}>▌</span>
-                    {toolStatus ? (
-                      <div
-                        style={{
-                          marginTop: m.content ? "0.45rem" : "0.25rem",
-                          paddingTop: m.content ? "0.45rem" : 0,
-                          borderTop: m.content ? "1px solid var(--border)" : undefined,
-                          fontSize: "0.8125rem",
-                          color: "var(--muted)",
-                          fontStyle: "italic",
-                          lineHeight: 1.4,
-                        }}
-                      >
-                        {toolStatus}
-                      </div>
-                    ) : null}
-                  </>
-                )}
-              </div>
-            </div>
-          );
-        })}
-        <div ref={bottomRef} />
-      </div>
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          send();
-        }}
-        style={{
-          flexShrink: 0,
-          position: "sticky",
-          bottom: 0,
-          zIndex: 20,
-          padding: "1rem",
-          borderTop: "1px solid var(--border)",
-          background: "var(--bg)",
-        }}
-      >
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", maxWidth: 768, margin: "0 auto" }}>
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Message..."
-            disabled={streaming}
-            style={{
-              flex: 1,
-              padding: "0.75rem 1rem",
-              borderRadius: 12,
-              border: "1px solid var(--border)",
-              background: "var(--surface)",
-              color: "var(--text)",
-              fontSize: "0.9375rem",
-            }}
-          />
-          {streaming ? (
-            <button
-              type="button"
-              onClick={stopStreaming}
-              style={{
-                padding: "0.75rem 1.25rem",
-                background: "var(--surface)",
-                color: "var(--text)",
-                border: "1px solid var(--border)",
-                borderRadius: 12,
-                cursor: "pointer",
-                fontWeight: 500,
-              }}
-            >
-              Stop
-            </button>
-          ) : (
-            <button
-              type="submit"
-              disabled={!input.trim()}
-              style={{
-                padding: "0.75rem 1.25rem",
-                background: "var(--accent)",
-                color: "white",
-                border: "none",
-                borderRadius: 12,
-                cursor: "pointer",
-                fontWeight: 500,
-              }}
-            >
-              Send
-            </button>
-          )}
-        </div>
-      </form>
-    </>
+        {isInitial && (
+          <div className="chat-hero">
+            <h1 className="chat-hero-title">How can I help you trade smarter?</h1>
+            <p className="chat-hero-subtitle">
+              Ask about your portfolio, latest news, or request analysis. Say
+              things like &quot;I bought 20,000 PKR of HBL&quot; or &quot;$500 of AAPL&quot; and your
+              portfolio will be updated automatically.
+            </p>
+          </div>
+        )}
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            send();
+          }}
+          className={composerClass}
+        >
+          <div className="chat-composer-inner">
+            <div className="chat-composer-row">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={onKeyDown}
+                placeholder="Ask anything..."
+                disabled={streaming}
+                rows={1}
+                className="chat-input"
+              />
+              {streaming ? (
+                <button type="button" onClick={stopStreaming} className="chat-btn chat-btn-stop">
+                  Stop
+                </button>
+              ) : (
+                <button type="submit" disabled={!input.trim()} className="chat-btn chat-btn-send">
+                  Send
+                </button>
+              )}
+            </div>
+            <div className="chat-composer-meta">
+              <select
+                id="chatbox-model"
+                aria-label="Model"
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                disabled={streaming}
+                className="chat-model-select"
+              >
+                {models.map((m) => (
+                  <option key={m.id} value={m.id} disabled={!m.enabled}>
+                    {`${m.provider}: ${m.label}`}
+                  </option>
+                ))}
+              </select>
+              <span className="chat-composer-hint">
+                Enter to send · Shift + Enter for new line
+              </span>
+            </div>
+          </div>
+        </form>
+      </div>
+    </main>
   );
 }

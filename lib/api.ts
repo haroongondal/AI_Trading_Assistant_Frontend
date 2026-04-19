@@ -5,10 +5,19 @@
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const GENERIC_CHAT_ERROR = "Something went wrong. Please try again.";
 
 const cred: RequestCredentials = "include";
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
+export type ChatModelOption = {
+  id: string;
+  provider: string;
+  label: string;
+  speed_tag: string;
+  enabled: boolean;
+  supports_tools?: boolean;
+};
 
 export type CurrentUser = { id: string; name: string; email: string | null };
 
@@ -31,18 +40,21 @@ export async function logoutApi(): Promise<void> {
 export async function streamChat(
   message: string,
   history: ChatMessage[],
+  modelId: string,
   onToken: (token: string) => void,
   onDone?: () => void,
   onError?: (err: Error) => void,
   signal?: AbortSignal,
-  onStatus?: (status: string) => void
+  onStatus?: (status: string) => void,
+  onRateLimit?: (message: string) => void,
+  onReplace?: (fullText: string) => void
 ): Promise<void> {
   let res: Response;
   try {
     res = await fetch(`${API_URL}/api/chat/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, history }),
+      body: JSON.stringify({ message, history, model_id: modelId }),
       signal,
       credentials: cred,
     });
@@ -51,6 +63,11 @@ export async function streamChat(
     throw e;
   }
   if (!res.ok) {
+    if (res.status === 429) {
+      onRateLimit?.("Rate limit reached. Please wait a moment and try again, or switch to another model.");
+      onDone?.();
+      return;
+    }
     const err = new Error(`Chat failed: ${res.status}`);
     onError?.(err);
     return;
@@ -73,6 +90,18 @@ export async function streamChat(
     }
     if (eventType === "status") {
       if (data) onStatus?.(data);
+      return;
+    }
+    if (eventType === "rate_limit") {
+      if (data) onRateLimit?.(data);
+      return;
+    }
+    if (eventType === "replace") {
+      onReplace?.(data);
+      return;
+    }
+    if (data.trim().startsWith("[Error:")) {
+      onToken(GENERIC_CHAT_ERROR);
       return;
     }
     onToken(data);
@@ -116,6 +145,12 @@ export async function streamChat(
     reader.releaseLock();
   }
   onDone?.();
+}
+
+export async function getChatModels(): Promise<{ models: ChatModelOption[] }> {
+  const res = await fetch(`${API_URL}/api/chat/models`, { credentials: cred });
+  if (!res.ok) throw new Error(`Chat models failed: ${res.status}`);
+  return res.json();
 }
 
 export async function getPortfolio(): Promise<{

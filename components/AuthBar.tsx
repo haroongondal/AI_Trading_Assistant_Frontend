@@ -27,86 +27,30 @@ export function AuthBar() {
 
   if (user === undefined) {
     return (
-      <div
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 40,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "0.75rem",
-          flexWrap: "wrap",
-          padding: "0.5rem 1.5rem",
-          borderBottom: "1px solid var(--border)",
-          background: "var(--surface)",
-          fontSize: "0.85rem",
-          color: "var(--muted)",
-        }}
-      >
+      <div className="app-topbar">
         <HeaderNav />
-        <span>…</span>
+        <span className="app-topbar-muted">…</span>
       </div>
     );
   }
 
   return (
-    <div
-      style={{
-        display: "flex",
-        position: "sticky",
-        top: 0,
-        zIndex: 40,
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: "0.75rem",
-        padding: "0.5rem 1.5rem",
-        borderBottom: "1px solid var(--border)",
-        background: "var(--surface)",
-        flexWrap: "wrap",
-      }}
-    >
+    <div className="app-topbar">
       <HeaderNav />
       {user ? (
         <>
-          <span style={{ fontSize: "0.875rem", color: "var(--muted)" }}>
+          <span className="app-topbar-muted">
             Signed in as <strong style={{ color: "var(--text)" }}>{user.name}</strong>
             {user.email ? ` (${user.email})` : ""}
           </span>
-          <button
-            type="button"
-            onClick={onLogout}
-            style={{
-              padding: "0.35rem 0.75rem",
-              fontSize: "0.8125rem",
-              borderRadius: 6,
-              border: "1px solid var(--border)",
-              background: "transparent",
-              color: "var(--text)",
-              cursor: "pointer",
-            }}
-          >
+          <button type="button" onClick={onLogout} className="app-btn-ghost">
             Log out
           </button>
         </>
       ) : (
         <>
-          <span style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
-            Sign in to use your own portfolio and notifications
-          </span>
-          <a
-            href={getGoogleLoginUrl()}
-            style={{
-              display: "inline-block",
-              padding: "0.4rem 0.9rem",
-              fontSize: "0.8125rem",
-              borderRadius: 6,
-              background: "var(--accent)",
-              color: "white",
-              textDecoration: "none",
-              fontWeight: 500,
-            }}
-          >
+          <span className="app-topbar-muted">Sign in to use your own portfolio and notifications</span>
+          <a href={getGoogleLoginUrl()} className="app-btn-primary">
             Sign in with Google
           </a>
         </>
