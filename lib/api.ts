@@ -34,7 +34,8 @@ export async function getMe(): Promise<CurrentUser | null> {
 }
 
 export async function logoutApi(): Promise<void> {
-  await fetch(`${API_URL}/api/auth/logout`, { method: "POST", credentials: cred });
+  const res = await fetch(`${API_URL}/api/auth/logout`, { method: "POST", credentials: cred });
+  if (!res.ok) throw new Error(`Logout failed: ${res.status}`);
 }
 
 export async function streamChat(

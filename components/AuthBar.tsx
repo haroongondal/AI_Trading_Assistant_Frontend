@@ -6,6 +6,7 @@ import { HeaderNav } from "@/components/HeaderNav";
 
 export function AuthBar() {
   const [user, setUser] = useState<CurrentUser | null | undefined>(undefined);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -20,9 +21,28 @@ export function AuthBar() {
     refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const authError = params.get("auth_error");
+    if (!authError) return;
+    const reason = params.get("auth_reason");
+    if (reason === "invalid_oauth_state") {
+      setAuthNotice("Sign-in was blocked by browser privacy settings. Allow cross-site cookies for this site and try again.");
+    } else {
+      setAuthNotice("Sign-in failed. Please try again.");
+    }
+  }, []);
+
   const onLogout = async () => {
-    await logoutApi();
-    setUser(null);
+    try {
+      await logoutApi();
+      setUser(null);
+      setAuthNotice(null);
+    } catch {
+      // Re-sync from server instead of showing a stale signed-out state.
+      await refresh();
+      setAuthNotice("Could not log out completely. Please try again.");
+    }
   };
 
   if (user === undefined) {
@@ -55,6 +75,7 @@ export function AuthBar() {
           </a>
         </>
       )}
+      {authNotice ? <span className="app-topbar-muted">{authNotice}</span> : null}
     </div>
   );
 }
