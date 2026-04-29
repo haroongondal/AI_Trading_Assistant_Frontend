@@ -6,8 +6,37 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const GENERIC_CHAT_ERROR = "Something went wrong. Please try again.";
+const AUTH_TOKEN_STORAGE_KEY = "auth_token";
 
 const cred: RequestCredentials = "include";
+
+function getStoredAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+}
+
+export function persistAuthToken(token: string): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+}
+
+export function clearAuthToken(): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+}
+
+function withAuth(init: RequestInit = {}): RequestInit {
+  const headers = new Headers(init.headers || {});
+  const token = getStoredAuthToken();
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  return { ...init, credentials: cred, headers };
+}
+
+function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(input, withAuth(init));
+}
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 export type ChatModelOption = {
@@ -26,7 +55,7 @@ export function getGoogleLoginUrl(): string {
 }
 
 export async function getMe(): Promise<CurrentUser | null> {
-  const res = await fetch(`${API_URL}/api/auth/me`, { credentials: cred });
+  const res = await apiFetch(`${API_URL}/api/auth/me`);
   if (!res.ok) return null;
   const data = await res.json();
   if (data == null || typeof data !== "object") return null;
@@ -34,7 +63,7 @@ export async function getMe(): Promise<CurrentUser | null> {
 }
 
 export async function logoutApi(): Promise<void> {
-  const res = await fetch(`${API_URL}/api/auth/logout`, { method: "POST", credentials: cred });
+  const res = await apiFetch(`${API_URL}/api/auth/logout`, { method: "POST" });
   if (!res.ok) throw new Error(`Logout failed: ${res.status}`);
 }
 
@@ -52,12 +81,11 @@ export async function streamChat(
 ): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${API_URL}/api/chat/stream`, {
+    res = await apiFetch(`${API_URL}/api/chat/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message, history, model_id: modelId }),
       signal,
-      credentials: cred,
     });
   } catch (e) {
     if (e instanceof Error && e.name === "AbortError") return;
@@ -149,7 +177,7 @@ export async function streamChat(
 }
 
 export async function getChatModels(): Promise<{ models: ChatModelOption[] }> {
-  const res = await fetch(`${API_URL}/api/chat/models`, { credentials: cred });
+  const res = await apiFetch(`${API_URL}/api/chat/models`);
   if (!res.ok) throw new Error(`Chat models failed: ${res.status}`);
   return res.json();
 }
@@ -166,17 +194,16 @@ export async function getPortfolio(): Promise<{
   total_positions: number;
   goal: string | null;
 }> {
-  const res = await fetch(`${API_URL}/api/portfolio`, { credentials: cred });
+  const res = await apiFetch(`${API_URL}/api/portfolio`);
   if (!res.ok) throw new Error(`Portfolio failed: ${res.status}`);
   return res.json();
 }
 
 export async function updatePortfolioGoal(goal: string | null): Promise<{ goal: string | null }> {
-  const res = await fetch(`${API_URL}/api/portfolio/goal`, {
+  const res = await apiFetch(`${API_URL}/api/portfolio/goal`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ goal }),
-    credentials: cred,
   });
   if (!res.ok) throw new Error(`Update goal failed: ${res.status}`);
   return res.json();
@@ -188,11 +215,10 @@ export async function addPosition(data: {
   entry_price?: number | null;
   notes?: string | null;
 }): Promise<{ id: number }> {
-  const res = await fetch(`${API_URL}/api/portfolio`, {
+  const res = await apiFetch(`${API_URL}/api/portfolio`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
-    credentials: cred,
   });
   if (!res.ok) throw new Error(`Add position failed: ${res.status}`);
   return res.json();
@@ -204,13 +230,13 @@ export async function getCoins(search?: string): Promise<{ coins: Coin[] }> {
   const url = search?.trim()
     ? `${API_URL}/api/coins?search=${encodeURIComponent(search.trim())}`
     : `${API_URL}/api/coins`;
-  const res = await fetch(url, { credentials: cred });
+  const res = await apiFetch(url);
   if (!res.ok) throw new Error(`Coins failed: ${res.status}`);
   return res.json();
 }
 
 export async function deletePosition(id: number): Promise<void> {
-  const res = await fetch(`${API_URL}/api/portfolio/${id}`, { method: "DELETE", credentials: cred });
+  const res = await apiFetch(`${API_URL}/api/portfolio/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
 }
 
@@ -225,11 +251,10 @@ export async function editPosition(
   notes: string | null;
   created_at: string;
 }> {
-  const res = await fetch(`${API_URL}/api/portfolio/${id}`, {
+  const res = await apiFetch(`${API_URL}/api/portfolio/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
-    credentials: cred,
   });
   if (!res.ok) throw new Error(`Edit failed: ${res.status}`);
   return res.json();
@@ -245,17 +270,16 @@ export async function getNotifications(): Promise<
     created_at: string;
   }>
 > {
-  const res = await fetch(`${API_URL}/api/notifications`, { credentials: cred });
+  const res = await apiFetch(`${API_URL}/api/notifications`);
   if (!res.ok) throw new Error(`Notifications failed: ${res.status}`);
   return res.json();
 }
 
 export async function markNotificationRead(id: number): Promise<void> {
-  const res = await fetch(`${API_URL}/api/notifications/${id}/read`, {
+  const res = await apiFetch(`${API_URL}/api/notifications/${id}/read`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ read: true }),
-    credentials: cred,
   });
   if (!res.ok) throw new Error(`Mark read failed: ${res.status}`);
 }

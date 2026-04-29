@@ -1,7 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { getGoogleLoginUrl, getMe, logoutApi, type CurrentUser } from "@/lib/api";
+import {
+  clearAuthToken,
+  getGoogleLoginUrl,
+  getMe,
+  logoutApi,
+  persistAuthToken,
+  type CurrentUser,
+} from "@/lib/api";
 import { HeaderNav } from "@/components/HeaderNav";
 
 export function AuthBar() {
@@ -22,6 +29,17 @@ export function AuthBar() {
   }, [refresh]);
 
   useEffect(() => {
+    const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
+    if (hash) {
+      const hashParams = new URLSearchParams(hash);
+      const authToken = hashParams.get("auth_token");
+      if (authToken) {
+        persistAuthToken(authToken);
+        window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+        void refresh();
+      }
+    }
+
     const params = new URLSearchParams(window.location.search);
     const authError = params.get("auth_error");
     if (!authError) return;
@@ -31,11 +49,12 @@ export function AuthBar() {
     } else {
       setAuthNotice("Sign-in failed. Please try again.");
     }
-  }, []);
+  }, [refresh]);
 
   const onLogout = async () => {
     try {
       await logoutApi();
+      clearAuthToken();
       setUser(null);
       setAuthNotice(null);
     } catch {
